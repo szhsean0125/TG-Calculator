@@ -84,7 +84,7 @@ def carbon_uptake_eq5_from_text(
 
     delta_mass_frac = (m_low - m_high) / 100.0
     C_CO2_g = sample_mass_g * delta_mass_frac
-    M_high_g = sample_mass_g * (m_high / 100.0)
+    M_high_g = sample_mass_g * (100 -delta_mass_frac)
     uptake_g_per_g_anhydrous = C_CO2_g / M_high_g if M_high_g != 0 else float("nan")
 
     return {
@@ -187,5 +187,3 @@ else:
 if not df_errors.empty:
     st.subheader("Errors")
     st.dataframe(df_errors, use_container_width=True)
-
-
