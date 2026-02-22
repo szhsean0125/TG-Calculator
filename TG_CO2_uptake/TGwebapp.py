@@ -82,13 +82,10 @@ def carbon_uptake_eq5_from_text(
     t_low_used, m_low = nearest_mass(df, T_low)
     t_high_used, m_high = nearest_mass(df, T_high)
 
-    delta_mass_pct = m_low - m_high
-    delta_mass_frac = delta_mass_pct / 100.0
-
+    delta_mass_frac = (m_low - m_high) / 100.0
     C_CO2_g = sample_mass_g * delta_mass_frac
-
-    denominator = delta_mass_pct
-    uptake_new = C_CO2_g / denominator if denominator != 0 else float("nan")
+    M_high_g = sample_mass_g * (m_high / 100.0)
+    uptake_g_per_g_anhydrous = C_CO2_g / M_high_g if M_high_g != 0 else float("nan")
 
     return {
         "file": filename,
@@ -99,11 +96,11 @@ def carbon_uptake_eq5_from_text(
         "T_high_used": t_high_used,
         "Mass_pct_at_T_low": m_low,
         "Mass_pct_at_T_high": m_high,
-        "delta_mass_pct": delta_mass_pct,
+        "delta_mass_pct": m_low - m_high,
         "C_CO2_g": C_CO2_g,
-        "CO2_uptake_new": uptake_new,
+        "M_T_high_g": M_high_g,
+        "CO2_uptake_actual_g_per_g_anhydrous": uptake_g_per_g_anhydrous,
     }
-
 
 
 def decode_bytes_best_effort(b: bytes) -> str:
@@ -190,3 +187,5 @@ else:
 if not df_errors.empty:
     st.subheader("Errors")
     st.dataframe(df_errors, use_container_width=True)
+
+
