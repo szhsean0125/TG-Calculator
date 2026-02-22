@@ -7,40 +7,28 @@ import streamlit as st
 
 
 def extract_sample_mass_g_from_text(text: str) -> float | None:
-    t = text.replace("\ufeff", "")
-    header = "\n".join(t.splitlines()[:3000])
+    header = "\n".join(text.splitlines()[:3000])
 
-    patterns = [
-        r"(?:SAMPLE\s*MASS|SAMPLE\s*WEIGHT|Sample\s*mass|Sample\s*Mass|Sample\s*weight|Sample\s*Weight|Initial\s*mass|Initial\s*weight|Start(?:ing)?\s*mass|Start(?:ing)?\s*weight)\s*[:=]\s*([0-9]+(?:[.,][0-9]+)?)\s*([uµ]g|mg|g)\b",
-        r"(?:SAMPLE\s*MASS|SAMPLE\s*WEIGHT|Sample\s*mass|Sample\s*Mass|Sample\s*weight|Sample\s*Weight|Initial\s*mass|Initial\s*weight)\s*\(\s*([uµ]g|mg|g)\s*\)\s*[:=]?\s*([0-9]+(?:[.,][0-9]+)?)\b",
-        r"(?:SAMPLE\s*MASS|SAMPLE\s*WEIGHT|Sample\s*mass|Sample\s*Mass|Sample\s*weight|Sample\s*Weight|Initial\s*mass|Initial\s*weight)\s*[:=]?\s*([0-9]+(?:[.,][0-9]+)?)\s*([uµ]g|mg|g)\b",
-    ]
+    m = re.search(
+        r"(?im)^\s*#?\s*SAMPLE\s*MASS\s*(?:/\s*(mg|g))?\s*:\s*,\s*([0-9]+(?:\.[0-9]+)?)\s*$",
+        header,
+    )
+    if m:
+        unit = (m.group(1) or "mg").lower()
+        val = float(m.group(2))
+        return val / 1000.0 if unit == "mg" else val
 
-    for p in patterns:
-        m = re.search(p, header, flags=re.IGNORECASE)
-        if not m:
-            continue
-
-        a, b = m.group(1), m.group(2)
-
-        if re.fullmatch(r"[uµ]g|mg|g", a, flags=re.IGNORECASE):
-            unit = a
-            val = b
-        else:
-            val = a
-            unit = b
-
-        val = float(val.replace(",", "."))
-        unit = unit.lower().replace("µ", "u")
-
-        if unit == "g":
-            return val
-        if unit == "mg":
-            return val / 1000.0
-        if unit == "ug":
-            return val / 1_000_000.0
+    m = re.search(
+        r"(?im)SAMPLE\s*MASS.*?/\s*(mg|g).*?,\s*([0-9]+(?:\.[0-9]+)?)",
+        header,
+    )
+    if m:
+        unit = m.group(1).lower()
+        val = float(m.group(2))
+        return val / 1000.0 if unit == "mg" else val
 
     return None
+
 
 
 def read_tg_table_from_text(text: str) -> pd.DataFrame:
