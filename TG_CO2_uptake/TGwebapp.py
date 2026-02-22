@@ -2,18 +2,45 @@ from __future__ import annotations
 
 import re
 from io import StringIO, BytesIO
-from pathlib import Path
 import pandas as pd
 import streamlit as st
 
 
 def extract_sample_mass_g_from_text(text: str) -> float | None:
-    m = re.search(r"(SAMPLE\s*MASS|Sample\s*mass)\s*[:=]\s*([0-9]*\.?[0-9]+)\s*(mg|g)\b", text)
-    if not m:
-        return None
-    val = float(m.group(2))
-    unit = m.group(3).lower()
-    return val / 1000.0 if unit == "mg" else val
+    t = text.replace("\ufeff", "")
+    header = "\n".join(t.splitlines()[:3000])
+
+    patterns = [
+        r"(?:SAMPLE\s*MASS|SAMPLE\s*WEIGHT|Sample\s*mass|Sample\s*Mass|Sample\s*weight|Sample\s*Weight|Initial\s*mass|Initial\s*weight|Start(?:ing)?\s*mass|Start(?:ing)?\s*weight)\s*[:=]\s*([0-9]+(?:[.,][0-9]+)?)\s*([uµ]g|mg|g)\b",
+        r"(?:SAMPLE\s*MASS|SAMPLE\s*WEIGHT|Sample\s*mass|Sample\s*Mass|Sample\s*weight|Sample\s*Weight|Initial\s*mass|Initial\s*weight)\s*\(\s*([uµ]g|mg|g)\s*\)\s*[:=]?\s*([0-9]+(?:[.,][0-9]+)?)\b",
+        r"(?:SAMPLE\s*MASS|SAMPLE\s*WEIGHT|Sample\s*mass|Sample\s*Mass|Sample\s*weight|Sample\s*Weight|Initial\s*mass|Initial\s*weight)\s*[:=]?\s*([0-9]+(?:[.,][0-9]+)?)\s*([uµ]g|mg|g)\b",
+    ]
+
+    for p in patterns:
+        m = re.search(p, header, flags=re.IGNORECASE)
+        if not m:
+            continue
+
+        a, b = m.group(1), m.group(2)
+
+        if re.fullmatch(r"[uµ]g|mg|g", a, flags=re.IGNORECASE):
+            unit = a
+            val = b
+        else:
+            val = a
+            unit = b
+
+        val = float(val.replace(",", "."))
+        unit = unit.lower().replace("µ", "u")
+
+        if unit == "g":
+            return val
+        if unit == "mg":
+            return val / 1000.0
+        if unit == "ug":
+            return val / 1_000_000.0
+
+    return None
 
 
 def read_tg_table_from_text(text: str) -> pd.DataFrame:
@@ -84,7 +111,9 @@ def carbon_uptake_eq5_from_text(
 
     delta_mass_frac = (m_low - m_high) / 100.0
     C_CO2_g = sample_mass_g * delta_mass_frac
-    M_high_g = sample_mass_g * (100 -delta_mass_frac)
+
+    M_high_g = sample_mass_g * (m_high / 100.0)
+
     uptake_g_per_g_anhydrous = C_CO2_g / M_high_g if M_high_g != 0 else float("nan")
 
     return {
@@ -120,32 +149,26 @@ def to_excel_bytes(df: pd.DataFrame) -> bytes:
 st.set_page_config(page_title="TG Carbon Uptake Calculator", layout="wide")
 
 st.title("TG Carbon Uptake Calculator")
-st.write(" Upload TG  → Chose the temperature range  and sample mass → Export")
+st.write("Upload TG → Choose the temperature range → Export")
 
 with st.sidebar:
     st.header("Parameters")
     T_low = st.number_input("T_low (°C)", value=500.0, step=1.0)
     T_high = st.number_input("T_high (°C)", value=850.0, step=1.0)
-    default_mass_g = st.number_input(
-        "Default sample mass (g) if not found in header",
-        value=0.0373,
-        step=0.0001,
-        format="%.4f",
-    )
     st.caption("Eq.(5): CO₂ uptake = C_CO2 / M_(T_high)")
 
 uploaded_files = st.file_uploader(
     "Upload TG CSV files (one or multiple)",
     type=["csv", "txt"],
-    accept_multiple_files=True
+    accept_multiple_files=True,
 )
 
 if not uploaded_files:
     st.info("Upload TG CSV files to begin processing.")
     st.stop()
 
-results = []
-errors = []
+results: list[dict] = []
+errors: list[dict] = []
 
 for uf in uploaded_files:
     raw = uf.getvalue()
@@ -153,7 +176,8 @@ for uf in uploaded_files:
 
     mass_g = extract_sample_mass_g_from_text(text)
     if mass_g is None:
-        mass_g = default_mass_g
+        errors.append({"file": uf.name, "error": "Sample mass not found in file header."})
+        continue
 
     try:
         res = carbon_uptake_eq5_from_text(
