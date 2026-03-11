@@ -102,7 +102,7 @@ def carbon_uptake_eq5_from_text(
 
     M_high_g = sample_mass_g * (m_high / 100.0)
 
-    uptake_g_per_g_anhydrous = C_CO2_g /(100 - (m_high - m_low)) if 100 - (m_high - m_low) != 0 else float("nan")
+    uptake_g_per_g_anhydrous = C_CO2_g /(1 - (m_high - m_low)) if 1 - (m_high - m_low) != 0 else float("nan")
 
     return {
         "file": filename,
