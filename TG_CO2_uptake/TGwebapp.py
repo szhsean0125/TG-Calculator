@@ -97,7 +97,7 @@ def carbon_uptake_eq5_from_text(
     t_low_used, m_low = nearest_mass(df, T_low)
     t_high_used, m_high = nearest_mass(df, T_high)
 
-    delta_mass_frac = (m_low - m_high) / 100.0
+    delta_mass_frac = (m_low - m_high)
     C_CO2_g = sample_mass_g * delta_mass_frac
 
     M_high_g = sample_mass_g * (m_high / 100.0)
