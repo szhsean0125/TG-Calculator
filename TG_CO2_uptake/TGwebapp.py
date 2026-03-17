@@ -30,7 +30,6 @@ def extract_sample_mass_g_from_text(text: str) -> float | None:
     return None
 
 
-
 def read_tg_table_from_text(text: str) -> pd.DataFrame:
     lines = text.splitlines()
 
@@ -102,7 +101,11 @@ def carbon_uptake_eq5_from_text(
 
     M_high_g = sample_mass_g * (m_high / 100.0)
 
-    uptake_g_per_g_anhydrous = C_CO2_g / (sample_mass_g * (1 - delta_mass_frac)) if 1 - delta_mass_frac != 0 else float("nan")
+    uptake_g_per_g_anhydrous = (
+        C_CO2_g / (sample_mass_g * (1 - delta_mass_frac))
+        if 1 - delta_mass_frac != 0
+        else float("nan")
+    )
 
     return {
         "file": filename,
@@ -137,13 +140,24 @@ def to_excel_bytes(df: pd.DataFrame) -> bytes:
 st.set_page_config(page_title="TG Carbon Uptake Calculator", layout="wide")
 
 st.title("TG Carbon Uptake Calculator")
-st.write("Upload TG → Choose the temperature range → Export")
+st.write("Upload TG → Choose the temperature range → Enter theoretical maximum CO₂ uptake → Export")
 
 with st.sidebar:
     st.header("Parameters")
-    T_low = st.number_input("T_low (°C)", value=500.0, step=1.0)
-    T_high = st.number_input("T_high (°C)", value=850.0, step=1.0)
+    T_low = st.number_input("T_low (°C)", value=500.0, step=1.0, format="%.2f")
+    T_high = st.number_input("T_high (°C)", value=850.0, step=1.0, format="%.2f")
+
+    theoretical_max_uptake = st.number_input(
+        "Theoretical maximum CO₂ uptake (g/g anhydrous)",
+        min_value=0.0,
+        value=0.4338,
+        step=0.0001,
+        format="%.4f",
+        help="Example: 43.38 wt% = 0.4338 g/g"
+    )
+
     st.caption("Eq.(5): CO₂ uptake = C_CO2 / M_(T_high)")
+    st.caption("Carbonation degree (%) = actual CO₂ uptake / theoretical maximum CO₂ uptake × 100")
 
 uploaded_files = st.file_uploader(
     "Upload TG CSV files (one or multiple)",
@@ -181,6 +195,18 @@ for uf in uploaded_files:
 
 df_results = pd.DataFrame(results).sort_values("file") if results else pd.DataFrame()
 df_errors = pd.DataFrame(errors) if errors else pd.DataFrame()
+
+# 统一理论最大吸碳量，应用到所有样品
+if not df_results.empty:
+    df_results["theoretical_max_CO2_uptake_g_per_g_anhydrous"] = theoretical_max_uptake
+
+    df_results["carbonation_degree_pct"] = pd.NA
+    valid_mask = df_results["theoretical_max_CO2_uptake_g_per_g_anhydrous"] > 0
+    df_results.loc[valid_mask, "carbonation_degree_pct"] = (
+        df_results.loc[valid_mask, "CO2_uptake_actual_g_per_g_anhydrous"]
+        / df_results.loc[valid_mask, "theoretical_max_CO2_uptake_g_per_g_anhydrous"]
+        * 100.0
+    )
 
 st.subheader("Results")
 if not df_results.empty:
