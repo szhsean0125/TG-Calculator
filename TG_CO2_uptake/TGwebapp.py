@@ -205,42 +205,53 @@ for uf in uploaded_files:
 df_results = pd.DataFrame(results).sort_values("file") if results else pd.DataFrame()
 df_errors = pd.DataFrame(errors) if errors else pd.DataFrame()
 
+# 把手动输入区域放到 sidebar，并放在温度选择下面
+edited_input_df = pd.DataFrame()
+
+if not df_results.empty:
+    with st.sidebar:
+        st.subheader("Theoretical Maximum CO₂ Uptake")
+        st.caption(
+            "Enter the theoretical maximum CO₂ uptake for each file in g/g anhydrous. "
+            "Example: 43.38 wt% = 0.4338 g/g."
+        )
+
+        input_df = pd.DataFrame({
+            "file": df_results["file"],
+            "theoretical_max_CO2_uptake_g_per_g_anhydrous": [None] * len(df_results),
+        })
+
+        edited_input_df = st.data_editor(
+            input_df,
+            use_container_width=True,
+            num_rows="fixed",
+            height=min(35 * (len(input_df) + 1) + 10, 300),
+            column_config={
+                "file": st.column_config.TextColumn(
+                    "file",
+                    disabled=True,
+                ),
+                "theoretical_max_CO2_uptake_g_per_g_anhydrous": st.column_config.NumberColumn(
+                    "theoretical_max_CO₂_uptake (g/g anhydrous)",
+                    help="Example: 0.4338 means 43.38 wt%",
+                    min_value=0.0,
+                    step=0.0001,
+                    format="%.4f",
+                ),
+            },
+            key="theoretical_input_table",
+        )
+
+        st.caption("Carbonation degree (%) = actual CO₂ uptake / theoretical maximum CO₂ uptake × 100")
+
 st.subheader("Results")
 if not df_results.empty:
     st.dataframe(df_results, use_container_width=True)
 
-    st.subheader("Manual input: theoretical maximum CO₂ uptake")
-    st.caption(
-        "Please enter the theoretical maximum CO₂ uptake for each file "
-        "in g/g anhydrous. Example: 43.38 wt% = 0.4338 g/g."
-    )
-
-    input_df = pd.DataFrame({
-        "file": df_results["file"],
-        "theoretical_max_CO2_uptake_g_per_g_anhydrous": [None] * len(df_results),
-    })
-
-    edited_input_df = st.data_editor(
-        input_df,
-        use_container_width=True,
-        num_rows="fixed",
-        column_config={
-            "file": st.column_config.TextColumn(
-                "file",
-                disabled=True,
-            ),
-            "theoretical_max_CO2_uptake_g_per_g_anhydrous": st.column_config.NumberColumn(
-                "theoretical_max_CO₂_uptake (g/g anhydrous)",
-                help="Example: 0.4338 means 43.38 wt%",
-                min_value=0.0,
-                step=0.0001,
-                format="%.4f",
-            ),
-        },
-        key="theoretical_input_table",
-    )
-
-    df_final = add_carbonation_degree(df_results, edited_input_df)
+    if not edited_input_df.empty:
+        df_final = add_carbonation_degree(df_results, edited_input_df)
+    else:
+        df_final = df_results.copy()
 
     st.subheader("Results with carbonation degree")
     st.dataframe(df_final, use_container_width=True)
