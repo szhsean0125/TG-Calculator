@@ -90,7 +90,6 @@ def carbon_uptake_eq5_from_text(
     sample_mass_g: float,
     T_low: float,
     T_high: float,
-    theoretical_max_uptake_g_per_g_anhydrous: float | None = None,
 ) -> dict:
     df = read_tg_table_from_text(text)
 
@@ -99,7 +98,6 @@ def carbon_uptake_eq5_from_text(
 
     delta_mass_frac = (m_low - m_high) / 100.0
     C_CO2_g = sample_mass_g * delta_mass_frac
-
     M_high_g = sample_mass_g * (m_high / 100.0)
 
     uptake_g_per_g_anhydrous = (
@@ -107,16 +105,6 @@ def carbon_uptake_eq5_from_text(
         if 1 - delta_mass_frac != 0
         else float("nan")
     )
-
-    # 新增：碳化程度计算
-    carbonation_degree_pct = None
-    if theoretical_max_uptake_g_per_g_anhydrous is not None:
-        if theoretical_max_uptake_g_per_g_anhydrous <= 0:
-            carbonation_degree_pct = float("nan")
-        else:
-            carbonation_degree_pct = (
-                uptake_g_per_g_anhydrous / theoretical_max_uptake_g_per_g_anhydrous
-            ) * 100.0
 
     return {
         "file": filename,
@@ -131,9 +119,28 @@ def carbon_uptake_eq5_from_text(
         "C_CO2_g": C_CO2_g,
         "M_T_high_g": M_high_g,
         "CO2_uptake_actual_g_per_g_anhydrous": uptake_g_per_g_anhydrous,
-        "theoretical_max_CO2_uptake_g_per_g_anhydrous": theoretical_max_uptake_g_per_g_anhydrous,
-        "carbonation_degree_pct": carbonation_degree_pct,
     }
+
+
+def add_carbonation_degree(
+    df: pd.DataFrame,
+    theoretical_df: pd.DataFrame,
+) -> pd.DataFrame:
+    out = df.merge(theoretical_df, on="file", how="left")
+
+    out["carbonation_degree_pct"] = (
+        out["CO2_uptake_actual_g_per_g_anhydrous"]
+        / out["theoretical_max_CO2_uptake_g_per_g_anhydrous"]
+        * 100.0
+    )
+
+    out.loc[
+        out["theoretical_max_CO2_uptake_g_per_g_anhydrous"].isna()
+        | (out["theoretical_max_CO2_uptake_g_per_g_anhydrous"] <= 0),
+        "carbonation_degree_pct"
+    ] = pd.NA
+
+    return out
 
 
 def decode_bytes_best_effort(b: bytes) -> str:
@@ -153,29 +160,13 @@ def to_excel_bytes(df: pd.DataFrame) -> bytes:
 st.set_page_config(page_title="TG Carbon Uptake Calculator", layout="wide")
 
 st.title("TG Carbon Uptake Calculator")
-st.write("Upload TG → Choose the temperature range → Enter theoretical maximum CO₂ uptake → Export")
+st.write("Upload TG → Choose the temperature range → Manually enter theoretical maximum CO₂ uptake → Export")
 
 with st.sidebar:
     st.header("Parameters")
     T_low = st.number_input("T_low (°C)", value=500.0, step=1.0)
     T_high = st.number_input("T_high (°C)", value=850.0, step=1.0)
-
-    st.subheader("Carbonation Degree")
-    use_theoretical = st.checkbox("Calculate carbonation degree", value=False)
-
-    theoretical_max_uptake = None
-    if use_theoretical:
-        theoretical_max_uptake = st.number_input(
-            "Theoretical maximum CO₂ uptake (g/g anhydrous)",
-            min_value=0.0,
-            value=0.4338,
-            step=0.0001,
-            format="%.4f",
-            help="Example: 0.4338 means 43.38 wt% theoretical maximum CO₂ uptake."
-        )
-
     st.caption("Eq.(5): CO₂ uptake = C_CO2 / M_(T_high)")
-    st.caption("Carbonation degree (%) = actual CO₂ uptake / theoretical maximum CO₂ uptake × 100")
 
 uploaded_files = st.file_uploader(
     "Upload TG CSV files (one or multiple)",
@@ -206,7 +197,6 @@ for uf in uploaded_files:
             sample_mass_g=mass_g,
             T_low=T_low,
             T_high=T_high,
-            theoretical_max_uptake_g_per_g_anhydrous=theoretical_max_uptake if use_theoretical else None,
         )
         results.append(res)
     except Exception as e:
@@ -219,7 +209,43 @@ st.subheader("Results")
 if not df_results.empty:
     st.dataframe(df_results, use_container_width=True)
 
-    xlsx = to_excel_bytes(df_results)
+    st.subheader("Manual input: theoretical maximum CO₂ uptake")
+    st.caption(
+        "Please enter the theoretical maximum CO₂ uptake for each file "
+        "in g/g anhydrous. Example: 43.38 wt% = 0.4338 g/g."
+    )
+
+    input_df = pd.DataFrame({
+        "file": df_results["file"],
+        "theoretical_max_CO2_uptake_g_per_g_anhydrous": [None] * len(df_results),
+    })
+
+    edited_input_df = st.data_editor(
+        input_df,
+        use_container_width=True,
+        num_rows="fixed",
+        column_config={
+            "file": st.column_config.TextColumn(
+                "file",
+                disabled=True,
+            ),
+            "theoretical_max_CO2_uptake_g_per_g_anhydrous": st.column_config.NumberColumn(
+                "theoretical_max_CO₂_uptake (g/g anhydrous)",
+                help="Example: 0.4338 means 43.38 wt%",
+                min_value=0.0,
+                step=0.0001,
+                format="%.4f",
+            ),
+        },
+        key="theoretical_input_table",
+    )
+
+    df_final = add_carbonation_degree(df_results, edited_input_df)
+
+    st.subheader("Results with carbonation degree")
+    st.dataframe(df_final, use_container_width=True)
+
+    xlsx = to_excel_bytes(df_final)
     st.download_button(
         label="Download results as Excel (.xlsx)",
         data=xlsx,
